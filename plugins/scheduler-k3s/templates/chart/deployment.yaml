@@ -1,8 +1,8 @@
 {{- $processName := "PROCESS_NAME" }}
 {{- $config := index .Values.processes "PROCESS_NAME" }}
 {{- $mappings := dict }}
-{{- if eq $processName "web" }}
-{{- range $pdx, $port_map := $config.web.port_maps }}
+{{- if $config.port_maps }}
+{{- range $pdx, $port_map := $config.port_maps }}
 {{- $mappings := set $mappings $port_map.name "true" }}
 {{- end }}
 {{- end }}
@@ -103,9 +103,9 @@ spec:
         image: {{ $.Values.global.image.name }}
         imagePullPolicy: Always
         name: {{ $.Values.global.app_name }}-{{ $processName }}
-        {{- if eq $processName "web" }}
+        {{- if $config.port_maps }}
         ports:
-        {{- range $pdx, $port_map := $config.web.port_maps }}
+        {{- range $pdx, $port_map := $config.port_maps }}
         {{- if and (eq $port_map.scheme "https") (hasKey $mappings (printf "http-80-%.0f" $port_map.container_port)) }}
         {{- continue }}
         {{- end }}

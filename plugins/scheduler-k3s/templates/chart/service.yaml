@@ -17,12 +17,15 @@ metadata:
   name: {{ $.Values.global.app_name }}-{{ $processName }}
   namespace: {{ $.Values.global.namespace }}
 spec:
+  type: ClusterIP
   ports:
-  {{- range $pdx, $port_map := $config.web.port_maps }}
+  {{- if $config.port_maps}}
+  {{- range $pdx, $port_map := $config.port_maps }}
   - name: {{ $port_map.name }}
     port: {{ $port_map.host_port }}
     protocol: TCP
     targetPort: {{ $port_map.container_port }}
+  {{- end }}
   {{- end }}
   selector:
     app.kubernetes.io/instance: {{ $.Values.global.app_name }}-{{ $processName }}

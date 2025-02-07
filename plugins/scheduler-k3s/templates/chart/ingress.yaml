@@ -40,7 +40,7 @@ spec:
     - host: {{ $domain.name | quote }}
       http:
         paths:
-          {{- if $config.web.port_maps }}
+          {{- if $config.port_maps }}
           - backend:
             {{- if $routeToKeda}}
               service:
@@ -52,7 +52,7 @@ spec:
               service:
                 name: {{ $.Values.global.app_name }}-{{ $processName }}
                 port:
-                  name: {{ include "primary.port" $config.web.port_maps }}
+                  name: {{ include "primary.port" $config.port_maps }}
             pathType: ImplementationSpecific
             {{- end }}
             path: /

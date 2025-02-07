@@ -444,6 +444,7 @@ func TriggerSchedulerDeploy(scheduler string, appName string, imageTag string) e
 			Replicas:     int32(processCount),
 			Resources:    processResources,
 			Volumes:      processVolumes,
+			PortMaps:     []ProcessPortMap{},
 		}
 
 		if processType == "web" {
@@ -457,8 +458,7 @@ func TriggerSchedulerDeploy(scheduler string, appName string, imageTag string) e
 			}
 
 			processValues.Web = ProcessWeb{
-				Domains:  domainValues,
-				PortMaps: []ProcessPortMap{},
+				Domains: domainValues,
 				TLS: ProcessTls{
 					Enabled:    tlsEnabled,
 					IssuerName: issuerName,
@@ -466,53 +466,56 @@ func TriggerSchedulerDeploy(scheduler string, appName string, imageTag string) e
 			}
 
 			processValues.ProcessType = ProcessType_Web
-			for _, portMap := range portMaps {
-				protocol := PortmapProtocol_TCP
-				if portMap.Scheme == "udp" {
-					protocol = PortmapProtocol_UDP
-				}
+		}
+		for _, portMap := range portMaps {
+			protocol := PortmapProtocol_TCP
+			if portMap.Scheme == "udp" {
+				protocol = PortmapProtocol_UDP
+			}
 
-				processValues.Web.PortMaps = append(processValues.Web.PortMaps, ProcessPortMap{
+			processValues.PortMaps = append(processValues.PortMaps, ProcessPortMap{
+				ContainerPort: portMap.ContainerPort,
+				HostPort:      portMap.HostPort,
+				Name:          portMap.String(),
+				Protocol:      protocol,
+				Scheme:        portMap.Scheme,
+			})
+		}
+
+		for _, portMap := range processValues.PortMaps {
+			_, httpOk := portMaps[fmt.Sprintf("http-80-%d", portMap.ContainerPort)]
+			_, httpsOk := portMaps[fmt.Sprintf("https-443-%d", portMap.ContainerPort)]
+			if portMap.Scheme == "http" && !httpsOk && tlsEnabled {
+				processValues.PortMaps = append(processValues.PortMaps, ProcessPortMap{
 					ContainerPort: portMap.ContainerPort,
-					HostPort:      portMap.HostPort,
-					Name:          portMap.String(),
-					Protocol:      protocol,
-					Scheme:        portMap.Scheme,
+					HostPort:      443,
+					Name:          fmt.Sprintf("https-443-%d", portMap.ContainerPort),
+					Protocol:      PortmapProtocol_TCP,
+					Scheme:        "https",
 				})
 			}
 
-			for _, portMap := range processValues.Web.PortMaps {
-				_, httpOk := portMaps[fmt.Sprintf("http-80-%d", portMap.ContainerPort)]
-				_, httpsOk := portMaps[fmt.Sprintf("https-443-%d", portMap.ContainerPort)]
-				if portMap.Scheme == "http" && !httpsOk && tlsEnabled {
-					processValues.Web.PortMaps = append(processValues.Web.PortMaps, ProcessPortMap{
-						ContainerPort: portMap.ContainerPort,
-						HostPort:      443,
-						Name:          fmt.Sprintf("https-443-%d", portMap.ContainerPort),
-						Protocol:      PortmapProtocol_TCP,
-						Scheme:        "https",
-					})
-				}
-
-				if portMap.Scheme == "https" && !httpOk {
-					processValues.Web.PortMaps = append(processValues.Web.PortMaps, ProcessPortMap{
-						ContainerPort: portMap.ContainerPort,
-						HostPort:      80,
-						Name:          fmt.Sprintf("http-80-%d", portMap.ContainerPort),
-						Protocol:      PortmapProtocol_TCP,
-						Scheme:        "http",
-					})
-				}
+			if portMap.Scheme == "https" && !httpOk {
+				processValues.PortMaps = append(processValues.PortMaps, ProcessPortMap{
+					ContainerPort: portMap.ContainerPort,
+					HostPort:      80,
+					Name:          fmt.Sprintf("http-80-%d", portMap.ContainerPort),
+					Protocol:      PortmapProtocol_TCP,
+					Scheme:        "http",
+				})
 			}
 
-			sort.Sort(NameSorter(processValues.Web.PortMaps))
+			sort.Sort(NameSorter(processValues.PortMaps))
 		}
 
 		values.Processes[processType] = processValues
 
 		templateFiles := []string{"deployment", "keda-scaled-object"}
+		if len(processValues.PortMaps) > 0 || processType == "web" {
+			templateFiles = append(templateFiles, "service")
+		}
 		if processType == "web" {
-			templateFiles = append(templateFiles, "service", "certificate", "ingress", "ingress-route", "https-redirect-middleware", "keda-http-scaled-object", "keda-interceptor-proxy-service")
+			templateFiles = append(templateFiles, "certificate", "ingress", "ingress-route", "https-redirect-middleware", "keda-http-scaled-object", "keda-interceptor-proxy-service")
 		}
 		for _, templateName := range templateFiles {
 			b, err := templates.ReadFile(fmt.Sprintf("templates/chart/%s.yaml", templateName))

@@ -114,6 +114,7 @@ type ProcessValues struct {
 	Resources    ProcessResourcesMap `yaml:"resources,omitempty"`
 	Web          ProcessWeb          `yaml:"web,omitempty"`
 	Volumes      []ProcessVolume     `yaml:"volumes,omitempty"`
+	PortMaps     []ProcessPortMap    `yaml:"port_maps,omitempty"`
 }
 
 type ProcessAnnotations struct {
@@ -257,9 +258,8 @@ type ProcessLabels struct {
 }
 
 type ProcessWeb struct {
-	Domains  []ProcessDomains `yaml:"domains,omitempty"`
-	PortMaps []ProcessPortMap `yaml:"port_maps,omitempty"`
-	TLS      ProcessTls       `yaml:"tls"`
+	Domains []ProcessDomains `yaml:"domains,omitempty"`
+	TLS     ProcessTls       `yaml:"tls"`
 }
 
 type ProcessDomains struct {
