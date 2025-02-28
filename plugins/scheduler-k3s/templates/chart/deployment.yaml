@@ -86,6 +86,16 @@ spec:
         {{ include "print.labels" (dict "config" $.Values.global "key" "pod") | indent 8 }}
         {{ include "print.labels" (dict "config" $config "key" "pod") | indent 8 }}
     spec:
+      terminationGracePeriodSeconds: 60
+      tolerations:
+      - key: "node.kubernetes.io/unreachable"
+        operator: "Exists"
+        effect: "NoExecute"
+        tolerationSeconds: 60
+      - key: "node.kubernetes.io/not-ready"
+        operator: "Exists"
+        effect: "NoExecute"
+        tolerationSeconds: 60
       containers:
       - args:
         {{- range $config.args }}
