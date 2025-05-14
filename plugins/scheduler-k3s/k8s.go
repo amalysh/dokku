@@ -228,6 +228,34 @@ func (k KubernetesClient) CreateJob(ctx context.Context, input CreateJobInput) (
 	return *job, err
 }
 
+// ListJobsInput contains all the information needed to list Kubernetes jobs
+type ListJobsInput struct {
+	// LabelSelector is the Kubernetes label selector
+	LabelSelector string
+
+	// Namespace is the Kubernetes namespace
+	Namespace string
+}
+
+// ListJobs lists Kubernetes cron jobs
+func (k KubernetesClient) ListJobs(ctx context.Context, input ListJobsInput) ([]batchv1.Job, error) {
+	listOptions := metav1.ListOptions{}
+	if input.LabelSelector != "" {
+		listOptions.LabelSelector = input.LabelSelector
+	}
+
+	jobs, err := k.Client.BatchV1().Jobs(input.Namespace).List(ctx, listOptions)
+	if err != nil {
+		return []batchv1.Job{}, err
+	}
+
+	if jobs == nil {
+		return []batchv1.Job{}, &NilResponseError{"jobs is nil"}
+	}
+
+	return jobs.Items, err
+}
+
 // CreateNamespaceInput contains all the information needed to create a Kubernetes namespace
 type CreateNamespaceInput struct {
 	// Name is the name of the Kubernetes namespace

@@ -1133,17 +1133,35 @@ func TriggerSchedulerRun(scheduler string, appName string, envCount int, args []
 		})
 
 		if err != nil {
-			if _, ok := err.(*NotFoundError); !ok {
-				return fmt.Errorf("Error getting image pull secret: %w", err)
+			// Try type assertion first
+			_, isNotFound := err.(*NotFoundError)
+
+			// If type assertion fails, check if the error message contains "not found"
+			if !isNotFound && (strings.Contains(err.Error(), "not found") || strings.Contains(err.Error(), "NotFound")) {
+				isNotFound = true
 			}
+
+			if !isNotFound {
+				return fmt.Errorf("Error getting image pull secret 1: %w", err)
+			}
+
+			// If it's a NotFoundError or contains "not found", set imagePullSecrets to empty string
 			imagePullSecrets = ""
 		}
 	}
 
 	workingDir := common.GetWorkingDir(appName, image)
+
+	var jobCommand []string
+	if attachToPod {
+		jobCommand = []string{commandShell}
+	} else {
+		jobCommand = command
+	}
+
 	job, err := templateKubernetesJob(Job{
 		AppName:          appName,
-		Command:          []string{commandShell},
+		Command:          jobCommand,
 		DeploymentID:     deploymentID,
 		Entrypoint:       entrypoint,
 		Env:              extraEnv,
@@ -1333,45 +1351,101 @@ func TriggerSchedulerRunList(scheduler string, appName string, format string) er
 	}
 
 	namespace := getComputedNamespace(appName)
-	cronJobs, err := clientset.ListCronJobs(ctx, ListCronJobsInput{
+	jobs, err := clientset.ListJobs(ctx, ListJobsInput{
 		LabelSelector: fmt.Sprintf("app.kubernetes.io/part-of=%s", appName),
 		Namespace:     namespace,
 	})
 	if err != nil {
-		return fmt.Errorf("Error getting cron jobs: %w", err)
+		return fmt.Errorf("Error getting jobs: %w", err)
 	}
 
-	type CronJobEntry struct {
-		ID       string `json:"id"`
-		AppName  string `json:"app"`
-		Command  string `json:"command"`
-		Schedule string `json:"schedule"`
+	type JobEntry struct {
+		Name      string `json:"name"`
+		Command   string `json:"command"`
+		State     string `json:"state"`
+		CreatedAt string `json:"created_at"`
 	}
 
-	data := []CronJobEntry{}
-	lines := []string{"ID | Schedule | Command"}
-	for _, cronJob := range cronJobs {
+	data := []JobEntry{}
+	lines := []string{"NAMES | COMMAND | CREATED"}
+	for _, job := range jobs {
 		command := ""
-		for _, container := range cronJob.Spec.JobTemplate.Spec.Template.Spec.Containers {
-			if container.Name == fmt.Sprintf("%s-cron", appName) {
+		for _, container := range job.Spec.Template.Spec.Containers {
+			// Check for both Command and Args
+			if len(container.Command) > 0 {
+				command = strings.Join(container.Command, " ")
+				// If both Command and Args exist, combine them
+				if len(container.Args) > 0 {
+					command += " " + strings.Join(container.Args, " ")
+				}
+			} else if len(container.Args) > 0 {
 				command = strings.Join(container.Args, " ")
 			}
 		}
 
-		cronID, ok := cronJob.Labels["dokku.com/cron-id"]
-		if !ok {
-			common.LogWarn(fmt.Sprintf("Cron job %s does not have a cron ID label", cronJob.Name))
+		// Get all pods associated with this job
+		pods, podErr := clientset.ListPods(ctx, ListPodsInput{
+			Namespace:     namespace,
+			LabelSelector: fmt.Sprintf("batch.kubernetes.io/job-name=%s", job.Name),
+		})
+
+		if podErr != nil {
+			common.LogWarn(fmt.Sprintf("Job %s error getting pods: %v", job.Name, podErr))
 			continue
 		}
+		for _, pod := range pods {
+			podName := pod.Name
+			status := pod.Status.Phase
 
-		lines = append(lines, fmt.Sprintf("%s | %s | %s", cronID, cronJob.Spec.Schedule, command))
-		data = append(data, CronJobEntry{
-			ID:       cronID,
-			AppName:  appName,
-			Command:  command,
-			Schedule: cronJob.Spec.Schedule,
-		})
+			lines = append(lines, fmt.Sprintf("%s | %s | %s", job.Name, command, job.CreationTimestamp))
+			data = append(data, JobEntry{
+				Name:      podName,
+				Command:   command,
+				State:     strings.ToLower(string(status)),
+				CreatedAt: job.CreationTimestamp.String(),
+			})
+		}
 	}
+
+	// cronJobs, err := clientset.ListCronJobs(ctx, ListCronJobsInput{
+	// 	LabelSelector: fmt.Sprintf("app.kubernetes.io/part-of=%s", appName),
+	// 	Namespace:     namespace,
+	// })
+	// if err != nil {
+	// 	return fmt.Errorf("Error getting cron jobs: %w", err)
+	// }
+
+	// type CronJobEntry struct {
+	// 	ID       string `json:"id"`
+	// 	AppName  string `json:"app"`
+	// 	Command  string `json:"command"`
+	// 	Schedule string `json:"schedule"`
+	// }
+
+	// data := []CronJobEntry{}
+	// lines := []string{"ID | Schedule | Command"}
+	// for _, cronJob := range cronJobs {
+	// 	command := ""
+	// 	for _, container := range cronJob.Spec.JobTemplate.Spec.Template.Spec.Containers {
+	// 		if container.Name == fmt.Sprintf("%s-cron", appName) {
+	// 			command = strings.Join(container.Args, " ")
+	// 		}
+	// 	}
+
+	// 	cronID, ok := cronJob.Labels["dokku.com/cron-id"]
+	// 	if !ok {
+	// 		common.LogWarn(fmt.Sprintf("Cron job %s does not have a cron ID label", cronJob.Name))
+	// 		continue
+	// 	}
+
+	// 	lines = append(lines, fmt.Sprintf("%s | %s | %s", cronID, cronJob.Spec.Schedule, command))
+	// 	data = append(data, CronJobEntry{
+	// 		ID:       cronID,
+	// 		AppName:  appName,
+	// 		Command:  command,
+	// 		Schedule: cronJob.Spec.Schedule,
+	// 	})
+	// }
 
 	if format == "stdout" {
 		result := columnize.SimpleFormat(lines)

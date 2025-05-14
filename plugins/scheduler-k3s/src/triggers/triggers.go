@@ -121,11 +121,30 @@ func main() {
 		if err != nil {
 			envCount = 0
 		}
+
+		// Get all arguments
 		args := flag.Args()
+
+		// Skip the first three arguments (scheduler, appName, envCount)
 		if len(args) >= 3 {
 			_, args = common.ShiftString(args)
 			_, args = common.ShiftString(args)
 			_, args = common.ShiftString(args)
+		}
+
+		// Look for the "--" separator and handle it properly
+		for i, arg := range args {
+			if arg == "--" {
+				if i+1 < len(args) {
+					// Skip the "--" and keep only what follows it
+					args = args[i+1:]
+					break
+				} else {
+					// "--" is the last argument, clear args
+					args = []string{}
+					break
+				}
+			}
 		}
 
 		err = scheduler_k3s.TriggerSchedulerRun(scheduler, appName, envCount, args)
