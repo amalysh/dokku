@@ -1236,7 +1236,7 @@ func TriggerSchedulerRun(scheduler string, appName string, envCount int, args []
 		Clientset:     clientset,
 		Namespace:     namespace,
 		LabelSelector: batchJobSelector,
-		Timeout:       30, // need to wait a bit longer if volumes attached
+		Timeout:       60, // need to wait a bit longer if volumes attached
 		Waiter:        isPodReady,
 	})
 	if err != nil {
