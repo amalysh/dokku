@@ -99,7 +99,7 @@ spec:
       containers:
       - args:
         {{- range $config.args }}
-        - {{ . }}
+        - {{ . | quote }}
         {{- end }}
         {{- if eq $processName "web" }}
         env:
